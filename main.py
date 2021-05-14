@@ -72,14 +72,16 @@ parser.add_argument('-trajectory', default='clean', type=str)  # clean or poison
 args = parser.parse_args()
 
 # Node info, especially important to check if the right ressources were allocated by SLURM
-args.gpu = set_available_gpus(args)
+# args.gpu = set_available_gpus(args)
+args.gpu = [1]
 ncpu = multiprocessing.cpu_count()
 print('==> Rank {}/{}, localrank {}, host {}, GPU {}/{}, nCPUs {}'.format(rank, nproc,
       localrank, socket.gethostname(), localrank % len(args.gpu), len(args.gpu), ncpu))
 
 # comet initialization
-api = API()
-weightapi = API()
+api = API(api_key="your_api_key")
+# api = comet_ml.api.API()
+weightapi = API(api_key="your_api_key")
 experiment = Dummy()
 if rank == 0 and not args.nocomet:
     experiment = Experiment(project_name='metapoison2', auto_param_logging=False, auto_metric_logging=False)
@@ -99,6 +101,8 @@ def craft():
         Meta.epochstate += 1
 
     def craftrate_schedule_gen():
+        print('inside craftrate_schedule_gen')
+        print('craftstep is: ', craftstep)
         # craftrate scheduler
         bestval, bestidx = 1e32, 0
         craftrate = args.craftrate
@@ -139,19 +143,31 @@ def craft():
                                  ['{} {}'.format(key, round(val, 2)) for key, val in resM.items()]))
 
     def comet_pull_weights_gen(api):
-        allexpts = api.get(f'weightset-{args.weightset}')
+        print('args.weightset: ', args.weightset)
+        # allexpts = api.get(f'weightset-{args.weightset}')
+        # allexpts = api.get("athicha", "weightset-standard-debug")
+        # I will change this to just specific experiment
         while True:
             tic = time()
             epoch = rank + replay * nproc
+            '''
             while True:
                 chosenexpt = choice(allexpts)
-                assets = api.get_experiment_asset_list(chosenexpt.key)
+                assets = api.get_asset_list(chosenexpt.key)
                 assets = [asset for asset in assets if asset['step'] == epoch]
                 if len(assets) > 0: break
+            '''
+            # get specific experiment from the experiment ID
+            experiment = api.get("athicha/weightset-standard-debug/dc974b75c6a04eeeaad430757bcf1c4a")
+            assets = experiment.get_asset_list()
             asset = choice(assets)
             epoch = asset['step']
-            weights0 = pickle.loads(api.get_experiment_asset(chosenexpt.key, asset['assetId']))
-            print(f'rank {rank} weight {asset["assetId"]} from epoch {epoch} pulled from expt {chosenexpt.key} in {time() - tic} sec')
+            # weights0 = pickle.loads(api.get_experiment_asset(chosenexpt.key, asset['assetId']))
+            bytefile = experiment.get_asset(asset['assetId'])
+            weights0 = pickle.loads(bytefile)
+            # file1 = open('weights0-57', 'rb')
+            # weights0 = pickle.load(file1)
+            # print(f'rank {rank} weight {asset["assetId"]} from epoch {epoch} pulled from expt {chosenexpt.key} in {time() - tic} sec')
             yield weights0, epoch
 
     print('==> begin crafting poisons on rank {}'.format(rank))
@@ -162,7 +178,9 @@ def craft():
             command = 'horovodrun -np {} -H localhost:{} python victim.py {}'.format(len(args.gpu), len(args.gpu), experiment.get_key())
             victimproc = Popen(command, **popen_args)
     cr_schedule = craftrate_schedule_gen()
+    print('before comet_pull_weights')
     comet_pull_weights = comet_pull_weights_gen(weightapi)
+    print('after comet_pull_weights')
     for craftstep in range(args.ncraftstep):
         # auxiliary tasks
         tic = time()
@@ -171,6 +189,7 @@ def craft():
         # increment_or_reset_epoch()
         craftrate = next(cr_schedule)
 
+        # default replay = 1
         for replay in range(args.nreplay):
             # load new weights into network
             if rank == 0: print(f'replay {replay}')
@@ -218,4 +237,6 @@ if __name__ == '__main__':
     sess.graph.finalize()
 
     # begin
+    print('before craft')
     craft()
+

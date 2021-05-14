@@ -1,0 +1,8 @@
+.DS_Store
+__pycache__/
+begin
+environment_2.yml
+initializing
+learners/__pycache__/
+output.txt
+weights0-57

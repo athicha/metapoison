@@ -56,12 +56,16 @@ parser.add_argument('-nadapt', default=1, type=int)
 parser.add_argument('-reducemethod', default='average', type=str) # softmax, average
 parser.add_argument('-objective', default='xent', type=str) # cw, xent
 args = parser.parse_args()
-api = API()
+
+api = API(api_key="your_api_key")
 if rank == 0:
+    # experiment = Experiment(parse_args=False, workspace=weightset-standard-debug, project_name=f'weightset-{args.weightset}', auto_param_logging=False, auto_metric_logging=False)
     experiment = Experiment(parse_args=False, project_name=f'weightset-{args.weightset}', auto_param_logging=False, auto_metric_logging=False)
     experiment.log_parameters(vars(args))
     experiment.add_tag(args.tag)
-args.gpu = set_available_gpus(args)
+# args.gpu = set_available_gpus(args)
+# since the set_available_gpus results in an error, hardcode the number of GPU instead
+args.gpu = [1]
 
 def victim():
     print('==> begin vanilla train')

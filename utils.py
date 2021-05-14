@@ -126,7 +126,7 @@ def plot_dict_series(dict_series, prefix=None, experiment=None, step=None):
         plt.ylabel(key)
         if experiment is not None: experiment.log_figure(figure_name='{}_{}'.format(prefix, key), step=step)
 
-
+'''
 def copy_to_args_from_experiment(args, exptkey, api, attrs):
     # given a comet experiment and an args namespace, copy the values of all attributes in attrs from experiment to args
     for param in api.get_experiment_parameters(exptkey):
@@ -136,8 +136,19 @@ def copy_to_args_from_experiment(args, exptkey, api, attrs):
             if type(getattr(args, param['name'])) is str: setattr(args, param['name'], str(param['valueCurrent']))
             if type(getattr(args, param['name'])) is float: setattr(args, param['name'], float(param['valueCurrent']))
     return args
+'''
 
-
+def copy_to_args_from_experiment(args, exptkey, api, attrs):
+    x = api.get("athicha/metapoison2/" + exptkey)
+    # parameters is a list of dictionaries of 40 parameters of the craft poison experiment 
+    parameters = x.get_parameters_summary()
+    for param in parameters:
+        if param['name'] in attrs:
+            if type(getattr(args, param['name'])) is int: setattr(args, param['name'], int(param['valueCurrent']))
+            if type(getattr(args, param['name'])) is str: setattr(args, param['name'], str(param['valueCurrent']))
+            if type(getattr(args, param['name'])) is float: setattr(args, param['name'], float(param['valueCurrent']))
+    return args
+            
 def has_exitflag(exptkey, api):
     # see whether experiment has logged exitflag via log_other
     return len(api.get_experiment_other(exptkey, 'exitflag')) > 0

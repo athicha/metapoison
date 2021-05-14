@@ -66,7 +66,8 @@ parser.add_argument('-nadapt', default=1, type=int)
 parser.add_argument('-reducemethod', default='average', type=str)  # softmax, average
 parser.add_argument('-objective', default='xent', type=str)  # cw, xent
 args = parser.parse_args()
-api = API()
+# api = API()
+api = API(api_key="your_api_key")
 attrs = ['lrnrate', 'batchsize', 'nbatch', 'npoison', 'ntarget', 'pretrain', 'warmupperiod', 'optimizer', 'weightdecay', 'augment', 'net', 'multiclasspoison', 'targetclass', 'poisonclass', 'ytargetadv']
 copy_to_args_from_experiment(args, args.key, api, attrs)
 if args.tag == 'multi': args.multiclasspoison = True
@@ -85,7 +86,11 @@ if rank == 0:
     experiment.log_parameter('nmeta', nmeta)
     experiment.set_name(args.key)
     experiment.add_tag(args.tag)
-args.gpu = set_available_gpus(args)
+
+    experiment.log_model("CIFAR10", "../models/victim_model_1_run")
+# args.gpu = set_available_gpus(args)
+# again, hardcode the number of the GPU to avoid the error
+args.gpu = [1]
 if args.name == '': args.name = args.net
 
 
@@ -93,20 +98,30 @@ def victim():
     def comet_pull_next_poison():
         # grab next poison from comet that hasn't been processed
         impatience = 0
-        while not has_exitflag(args.key, api) or impatience < 5:  # patience before ending victim process
+        # while not has_exitflag(args.key, api) or impatience < 5:  # patience before ending victim process
+        # Get rid off has_exitflag condition and also only keep the impagtience condition 
+        while impatience < 5:  # patience before ending victim process
             sleep(1)
+
             print('searching for poisons to pull')
-            assets = {asset['step']: asset['assetId'] for asset in api.get_experiment_asset_list(args.key)
-                      if 'poisoninputs-' in asset['fileName']}
-            logged = set(metric['step'] for metric in api.get_experiment_metrics_raw(args.key)
-                         if metric['metricName'] == 'victim{}_accT0'.format(args.name))
+            experiment = api.get("athicha/metapoison2/" + args.key)
+            # assets_list = experiment.get_asset_list()
+            assets = {asset['step']: asset['assetId'] for asset in experiment.get_asset_list()
+                    if 'poisoninputs-' in asset['fileName']}
+
+            logged = set(metric['step'] for metric in experiment.get_metrics()
+                        if metric['metricName'] == 'victim{}_accT0'.format(args.name))
+            # logged = set(metric['step'] for metric in api.get_experiment_metrics_raw(args.key)
+            #              if metric['metricName'] == 'victim{}_accT0'.format(args.name))
             unlogged = set(assets.keys()) - logged - locallog
             if args.craftsteps is not None:
                 unlogged = set(args.craftsteps).intersection(set(assets.keys())) - locallog
             if len(unlogged) > 0:
                 craftstep = max(unlogged)
                 locallog.add(craftstep)
-                bytefile = api.get_experiment_asset(args.key, assets[craftstep])
+                # get specific asset from the chosen asset_id
+                bytefile = experiment.get_asset(assets[craftstep])
+                # bytefile = api.get_experiment_asset(args.key, assets[craftstep])
                 print('==> poisoninputs-{} pulled'.format(craftstep))
                 return pickle.loads(bytefile), craftstep
             impatience += 1
@@ -132,7 +147,12 @@ def victim():
     cnt = 0
     while args.neval is None or cnt < args.neval:
         cnt += 1
-        if len(set(args.craftsteps) - locallog) == 0: locallog = set() # start over
+        # this if-else is to fix TypeError: 'NoneType' object is not iterable sicne args.craftsteps is None by default
+        if args.craftsteps is None:
+            locallog = set()
+        else: 
+            if len(set(args.craftsteps) - locallog) == 0: locallog = set() # start over
+        # if len(set(args.craftsteps) - locallog) == 0: locallog = set() # start over
 
         # pull poisons from comet
         poisoninputs, craftstep = None, None
